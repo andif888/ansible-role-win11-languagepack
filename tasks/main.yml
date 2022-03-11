@@ -1,0 +1,129 @@
+---
+# tasks file for ansible-role-win11-languagepack
+- name: disable antimalware realtime shit
+  win_shell: |
+    Set-MpPreference -DisableRealtimeMonitoring $true
+  ignore_errors: yes
+
+- name: make sure dir exist
+  win_file:
+    path: '{{ language_experience_pack_download_dir }}'
+    state: directory
+
+- name: Download Language ISOs
+  win_get_url:
+    url: '{{ item.url }}'
+    dest: '{{ item.dest }}'
+    force: no
+  loop: '{{ language_experience_pack_isos }}'
+  when: language_experience_pack_isos | length > 0
+
+- name: Sleep for 10 seconds and continue with play
+  pause:
+    seconds: 10
+
+- name: Mount ISOs
+  win_disk_image:
+    image_path: '{{ item.dest }}'
+    state: present
+  loop: '{{ language_experience_pack_isos }}'
+  register: disk_image_out
+  when: language_experience_pack_isos | length > 0
+
+- debug:
+    var: disk_image_out
+  when: language_experience_pack_isos | length > 0
+
+- name: Disable-ScheduledTasks
+  community.windows.win_scheduled_task:
+    name: '{{ item.name }}'
+    path: '{{ item.path }}'
+    enabled: no
+  loop:
+    - { name: 'Pre-staged app cleanup', path: '\Microsoft\Windows\AppxDeploymentClient' }
+    - { name: 'LPRemove', path: '\Microsoft\Windows\MUI' }
+    - { name: 'Uninstallation', path: '\Microsoft\Windows\LanguageComponentsInstaller' }
+
+- name: BlockCleanupOfUnusedPreinstalledLangPacks Registy
+  win_regedit:
+    path: 'HKLM:\SOFTWARE\Policies\Microsoft\Control Panel\International'
+    name: BlockCleanupOfUnusedPreinstalledLangPacks
+    data: 1
+    type: dword
+    state: present
+
+- name: Get wuauserv start_mode
+  ansible.windows.win_service:
+    name: wuauserv
+  register: wuauserv_state
+
+- debug:
+    var: wuauserv_state.start_mode
+
+- name: Set wuauserv start_mode=manual
+  ansible.windows.win_service:
+    name: wuauserv
+    start_mode: manual
+  register: wuauserv_state_modified
+  when: wuauserv_state.start_mode == 'disabled'
+
+- name: Add-AppProvisionedPackage
+  win_shell: |
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-Client-Language-Pack_x64_{{ item }}.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-EMS-SAC-Desktop-Tools-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-LanguageFeatures-Basic-{{ item }}-Package~31bf3856ad364e35~amd64~~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-LanguageFeatures-Handwriting-{{ item }}-Package~31bf3856ad364e35~amd64~~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-LanguageFeatures-OCR-{{ item }}-Package~31bf3856ad364e35~amd64~~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-LanguageFeatures-Speech-{{ item }}-Package~31bf3856ad364e35~amd64~~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-LanguageFeatures-TextToSpeech-{{ item }}-Package~31bf3856ad364e35~amd64~~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-NetFx3-OnDemand-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-InternetExplorer-Optional-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-MSPaint-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-MSPaint-FoD-Package~31bf3856ad364e35~wow64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-Notepad-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-Notepad-FoD-Package~31bf3856ad364e35~wow64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-PowerShell-ISE-FOD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-PowerShell-ISE-FOD-Package~31bf3856ad364e35~wow64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-Printing-PMCPPC-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-Printing-WFS-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-SnippingTool-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-StepsRecorder-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-StepsRecorder-Package~31bf3856ad364e35~wow64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-WordPad-FoD-Package~31bf3856ad364e35~amd64~{{ item }}~.cab
+    Add-WindowsPackage -Online -PackagePath {{ disk_image_out.results[0].mount_paths[0] }}LanguagesAndOptionalFeatures\Microsoft-Windows-WordPad-FoD-Package~31bf3856ad364e35~wow64~{{ item }}~.cab
+
+    $LanguageList = Get-WinUserLanguageList
+    $LanguageList.Add("{{ item }}")
+    Set-WinUserLanguageList $LanguageList -force
+  loop: '{{ language_experience_packs }}'
+  register: windows_language_pack_install
+  when: language_experience_packs | length > 0
+
+- debug:
+    var: windows_language_pack_install
+  when: language_experience_packs | length > 0
+
+- name: Restore wuauserv start_mode={{ wuauserv_state.start_mode }}
+  ansible.windows.win_service:
+    name: wuauserv
+    start_mode: '{{ wuauserv_state.start_mode }}'
+  when: wuauserv_state_modified.changed
+
+- name: Umount ISOs
+  win_disk_image:
+    image_path: '{{ item.dest }}'
+    state: absent
+  loop: '{{ language_experience_pack_isos }}'
+  when: language_experience_pack_isos | length > 0
+
+- name: Remove downloaded ISOs
+  win_file:
+    path: '{{ item.dest }}'
+    state: absent
+  loop: '{{ language_experience_pack_isos }}'
+  when: language_experience_pack_isos_remove_when_finished == true
+
+- name: re-enable antimalware realtime shit
+  win_shell: |
+    Set-MpPreference -DisableRealtimeMonitoring $false
+  ignore_errors: yes
